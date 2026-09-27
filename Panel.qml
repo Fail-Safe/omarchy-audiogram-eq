@@ -275,7 +275,17 @@ Panel {
   }
 
   function setIntensity(value) {
-    enqueue(["intensity", String(Math.round(value))])
+    var rounded = String(Math.round(Number(value) || 0))
+    // Coalesce: while dragging, replace any queued intensity so we don't
+    // backlog one process per step.
+    var queue = []
+    for (var i = 0; i < pendingCommands.length; i++) {
+      if (pendingCommands[i][0] !== "intensity")
+        queue.push(pendingCommands[i])
+    }
+    queue.push(["intensity", rounded])
+    pendingCommands = queue
+    runNextMutation()
   }
 
   function togglePerEar() {
@@ -385,6 +395,28 @@ Panel {
 
   Component.onCompleted: refresh()
 
+  // Bordered section chrome (same control tokens as Speaker Calibrator toggles).
+  component SectionCard: BorderSurface {
+    id: card
+    default property alias body: inner.data
+    width: parent ? parent.width : implicitWidth
+    radius: Style.cornerRadius
+    color: Style.controlFill(false, false, Color.menu.text, Color.accent)
+    borderSpec: Border.controlSpec("normal", Color.menu.text, Color.accent)
+    implicitHeight: inner.implicitHeight + Style.spacing.rowPaddingX * 2 + Border.top(borderSpec) + Border.bottom(borderSpec)
+
+    Column {
+      id: inner
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.leftMargin: card.borderLeft + Style.spacing.rowPaddingX
+      anchors.rightMargin: card.borderRight + Style.spacing.rowPaddingX
+      anchors.topMargin: card.borderTop + Style.spacing.rowPaddingX
+      spacing: Style.spacing.sm
+    }
+  }
+
   KeyboardPanel {
     id: popup
     anchorItem: root.anchorItem
@@ -430,7 +462,7 @@ Panel {
           // Hair inset so clipped row borders don't read as unfinished.
           x: Style.space(2)
           width: parent.width - Style.space(4)
-          spacing: Style.spacing.md
+          spacing: Style.space(12)
 
         Item {
           width: parent.width
@@ -496,293 +528,261 @@ Panel {
           wrapMode: Text.WordWrap
         }
 
-        Column {
-          width: parent.width
-          spacing: Style.spacing.xs
-
-          Item {
+        SectionCard {
+          Column {
             width: parent.width
-            height: Math.max(audiogramHeaderLabel.implicitHeight, audiogramToggle.implicitHeight)
+            spacing: Style.spacing.xs
+
+            Item {
+              width: parent.width
+              height: Math.max(audiogramHeaderLabel.implicitHeight, audiogramToggle.implicitHeight)
+
+              Text {
+                id: audiogramHeaderLabel
+                anchors.left: parent.left
+                anchors.right: audiogramToggle.left
+                anchors.rightMargin: Style.spacing.sm
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Audiogram (dB HL)"
+                color: Color.menu.text
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.subtitle
+                font.bold: true
+              }
+
+              Button {
+                id: audiogramToggle
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.audiogramExpanded ? "Hide" : "Edit"
+                focusable: true
+                onClicked: root.toggleAudiogramEditor()
+              }
+            }
 
             Text {
-              id: audiogramHeaderLabel
-              anchors.left: parent.left
-              anchors.right: audiogramToggle.left
-              anchors.rightMargin: Style.spacing.sm
-              anchors.verticalCenter: parent.verticalCenter
-              text: "AUDIOGRAM (dB HL)"
-              color: Color.menu.text
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-
-            Button {
-              id: audiogramToggle
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.audiogramExpanded ? "Hide" : "Edit"
-              focusable: true
-              onClicked: root.toggleAudiogramEditor()
-            }
-          }
-
-          Text {
-            width: parent.width
-            visible: !root.audiogramExpanded
-            text: root.audiogramSummary()
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            elide: Text.ElideRight
-          }
-
-          Text {
-            width: parent.width
-            visible: root.audiogramExpanded
-            text: "Enter left/right thresholds from your clinic chart (250–8k, including 3k/6k when listed). Saved to your config — not into the plugin."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          TextField {
-            id: labelField
-            width: parent.width
-            visible: root.audiogramExpanded
-            placeholderText: "Profile label"
-            foreground: Color.menu.text
-            accent: Color.accent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            verticalPadding: Style.space(4)
-            onTextEdited: {
-              root.draftLabel = text
-              root.markProfileDirty()
-            }
-            onActiveFocusChanged: root.profileEditing = activeFocus || leftFocusProxy.focused || rightFocusProxy.focused
-          }
-
-          // Focus proxies updated by threshold NumberFields below.
-          QtObject {
-            id: leftFocusProxy
-            property bool focused: false
-          }
-          QtObject {
-            id: rightFocusProxy
-            property bool focused: false
-          }
-
-          Item {
-            width: parent.width
-            height: Style.space(18)
-            visible: root.audiogramExpanded
-
-            Text {
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(36)
-              text: "Hz"
+              width: parent.width
+              visible: !root.audiogramExpanded
+              text: root.audiogramSummary()
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
             }
 
             Text {
-              anchors.left: parent.left
-              anchors.leftMargin: Style.space(52)
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(88)
-              horizontalAlignment: Text.AlignHCenter
-              text: "L"
-              color: "#38bdf8"
+              width: parent.width
+              visible: root.audiogramExpanded
+              text: "Enter left/right thresholds from your clinic chart (250–8k, including 3k/6k when listed). Saved to your config — not into the plugin."
+              color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
-              font.bold: true
+              wrapMode: Text.WordWrap
             }
 
-            Text {
-              anchors.left: parent.left
-              anchors.leftMargin: Style.space(148)
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(88)
-              horizontalAlignment: Text.AlignHCenter
-              text: "R"
-              color: "#f472b6"
+            TextField {
+              id: labelField
+              width: parent.width
+              visible: root.audiogramExpanded
+              placeholderText: "Profile label"
+              foreground: Color.menu.text
+              accent: Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
-              font.bold: true
+              verticalPadding: Style.space(4)
+              onTextEdited: {
+                root.draftLabel = text
+                root.markProfileDirty()
+              }
+              onActiveFocusChanged: root.profileEditing = activeFocus || leftFocusProxy.focused || rightFocusProxy.focused
             }
-          }
 
-          Repeater {
-            model: root.audiogramExpanded ? root.draftThresholds : []
+            // Focus proxies updated by threshold NumberFields below.
+            QtObject {
+              id: leftFocusProxy
+              property bool focused: false
+            }
+            QtObject {
+              id: rightFocusProxy
+              property bool focused: false
+            }
 
             Item {
-              required property var modelData
-              required property int index
-              width: panelColumn.width
-              height: Style.space(34)
+              width: parent.width
+              height: Style.space(18)
+              visible: root.audiogramExpanded
 
               Text {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 width: Style.space(36)
-                text: root.formatHz(modelData.frequency)
-                color: Color.menu.text
+                text: "Hz"
+                color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
 
-              NumberField {
-                id: leftField
+              Text {
                 anchors.left: parent.left
                 anchors.leftMargin: Style.space(52)
                 anchors.verticalCenter: parent.verticalCenter
-                label: ""
-                from: 0
-                to: 120
-                stepSize: 5
-                value: modelData.left
-                fieldWidth: Style.space(88)
-                foreground: Color.menu.text
-                accent: "#38bdf8"
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                spacing: 0
-                onModified: function(v) { root.setDraftThreshold(index, "left", v) }
-
-                Connections {
-                  target: leftField.field
-                  function onActiveFocusChanged() {
-                    leftFocusProxy.focused = leftField.field.activeFocus
-                    root.profileEditing = labelField.activeFocus || leftFocusProxy.focused || rightFocusProxy.focused
-                  }
-                }
+                width: Style.space(88)
+                horizontalAlignment: Text.AlignHCenter
+                text: "L"
+                color: "#38bdf8"
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
               }
 
-              NumberField {
-                id: rightField
+              Text {
                 anchors.left: parent.left
                 anchors.leftMargin: Style.space(148)
                 anchors.verticalCenter: parent.verticalCenter
-                label: ""
-                from: 0
-                to: 120
-                stepSize: 5
-                value: modelData.right
-                fieldWidth: Style.space(88)
-                foreground: Color.menu.text
-                accent: "#f472b6"
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                spacing: 0
-                onModified: function(v) { root.setDraftThreshold(index, "right", v) }
+                width: Style.space(88)
+                horizontalAlignment: Text.AlignHCenter
+                text: "R"
+                color: "#f472b6"
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+            }
 
-                Connections {
-                  target: rightField.field
-                  function onActiveFocusChanged() {
-                    rightFocusProxy.focused = rightField.field.activeFocus
-                    root.profileEditing = labelField.activeFocus || leftFocusProxy.focused || rightFocusProxy.focused
+            Repeater {
+              model: root.audiogramExpanded ? root.draftThresholds : []
+
+              Item {
+                required property var modelData
+                required property int index
+                width: parent.width
+                height: Style.space(34)
+
+                Text {
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(36)
+                  text: root.formatHz(modelData.frequency)
+                  color: Color.menu.text
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                NumberField {
+                  id: leftField
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(52)
+                  anchors.verticalCenter: parent.verticalCenter
+                  label: ""
+                  from: 0
+                  to: 120
+                  stepSize: 5
+                  value: modelData.left
+                  fieldWidth: Style.space(88)
+                  foreground: Color.menu.text
+                  accent: "#38bdf8"
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  spacing: 0
+                  onModified: function(v) { root.setDraftThreshold(index, "left", v) }
+
+                  Connections {
+                    target: leftField.field
+                    function onActiveFocusChanged() {
+                      leftFocusProxy.focused = leftField.field.activeFocus
+                      root.profileEditing = labelField.activeFocus || leftFocusProxy.focused || rightFocusProxy.focused
+                    }
+                  }
+                }
+
+                NumberField {
+                  id: rightField
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(148)
+                  anchors.verticalCenter: parent.verticalCenter
+                  label: ""
+                  from: 0
+                  to: 120
+                  stepSize: 5
+                  value: modelData.right
+                  fieldWidth: Style.space(88)
+                  foreground: Color.menu.text
+                  accent: "#f472b6"
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  spacing: 0
+                  onModified: function(v) { root.setDraftThreshold(index, "right", v) }
+
+                  Connections {
+                    target: rightField.field
+                    function onActiveFocusChanged() {
+                      rightFocusProxy.focused = rightField.field.activeFocus
+                      root.profileEditing = labelField.activeFocus || leftFocusProxy.focused || rightFocusProxy.focused
+                    }
                   }
                 }
               }
             }
-          }
 
-          Row {
-            spacing: Style.spacing.sm
-            visible: root.audiogramExpanded
+            Row {
+              spacing: Style.spacing.sm
+              visible: root.audiogramExpanded
 
-            Button {
-              text: "Save audiogram"
-              selected: root.profileDirty
-              focusable: true
-              enabled: !root.mutationBusy && root.profileDirty
-              onClicked: root.saveProfile()
-            }
+              Button {
+                text: "Save audiogram"
+                selected: root.profileDirty
+                focusable: true
+                enabled: !root.mutationBusy && root.profileDirty
+                onClicked: root.saveProfile()
+              }
 
-            Button {
-              text: "Revert"
-              focusable: true
-              enabled: !root.mutationBusy && root.profileDirty
-              onClicked: root.revertProfile()
-            }
-          }
-        }
-
-        Row {
-          spacing: Style.spacing.sm
-
-          Repeater {
-            model: [
-              { id: "auto", label: "Auto" },
-              { id: "headphones", label: "Headphones" },
-              { id: "speakers", label: "Speakers" }
-            ]
-
-            Button {
-              required property var modelData
-              text: modelData.label
-              selected: root.state.mode === modelData.id
-              focusable: true
-              enabled: !root.mutationBusy
-              onClicked: root.setMode(modelData.id)
+              Button {
+                text: "Revert"
+                focusable: true
+                enabled: !root.mutationBusy && root.profileDirty
+                onClicked: root.revertProfile()
+              }
             }
           }
         }
 
-        Column {
-          width: parent.width
-          spacing: Style.spacing.xs
-
-          Text {
-            text: (root.state.activePreset === "headphones" ? "Headphones" : "Speakers")
-              + " intensity " + root.state.intensity + "%"
-            color: Color.menu.text
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          Text {
-            text: "Saved per mode · headphones "
-              + Number((root.state.intensityByPreset || {}).headphones) + "% / speakers "
-              + Number((root.state.intensityByPreset || {}).speakers) + "%"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          Slider {
-            id: intensitySlider
-            width: parent.width
-            from: 0
-            to: 100
-            stepSize: 5
-            value: root.state.intensity
-            enabled: !root.mutationBusy
-            onPressedChanged: {
-              if (!pressed)
-                root.setIntensity(value)
-            }
-          }
-        }
-
-        Item {
-          width: parent.width
-          implicitHeight: Math.max(perEarCopy.implicitHeight, perEarButton.implicitHeight)
-
+        SectionCard {
           Column {
-            id: perEarCopy
-            anchors.left: parent.left
-            anchors.right: perEarButton.left
-            anchors.rightMargin: Style.spacing.md
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.spacing.xxs
+            width: parent.width
+            spacing: Style.spacing.sm
 
             Text {
-              text: "Per-ear L/R"
+              text: "Output mode"
+              color: Color.menu.text
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+              font.bold: true
+            }
+
+            Row {
+              spacing: Style.spacing.sm
+
+              Repeater {
+                model: [
+                  { id: "auto", label: "Auto" },
+                  { id: "headphones", label: "Headphones" },
+                  { id: "speakers", label: "Speakers" }
+                ]
+
+                Button {
+                  required property var modelData
+                  text: modelData.label
+                  selected: root.state.mode === modelData.id
+                  focusable: true
+                  enabled: !root.mutationBusy
+                  onClicked: root.setMode(modelData.id)
+                }
+              }
+            }
+
+            Text {
+              text: (root.state.activePreset === "headphones" ? "Headphones" : "Speakers")
+                + " intensity " + Math.round(intensitySlider.value) + "%"
               color: Color.menu.text
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -791,32 +791,64 @@ Panel {
 
             Text {
               width: parent.width
-              text: "Independent left/right gains · default on for headphones, off for speakers"
+              text: "Saved per mode · headphones "
+                + Number((root.state.intensityByPreset || {}).headphones) + "% / speakers "
+                + Number((root.state.intensityByPreset || {}).speakers) + "%"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            Slider {
+              id: intensitySlider
+              width: parent.width
+              from: 0
+              to: 100
+              stepSize: 5
+              // Keep interactive while intensity mutations run; disabling on
+              // mutationBusy was aborting the drag after the first onMoved.
+              enabled: true
+              // Sync from backend only when not dragging so status replies
+              // don't yank the thumb mid-gesture.
+              Binding {
+                target: intensitySlider
+                property: "value"
+                value: root.state.intensity
+                when: !intensitySlider.pressed
+              }
+              onMoved: root.setIntensity(value)
+              onPressedChanged: {
+                if (!pressed)
+                  root.setIntensity(value)
+              }
+            }
+
+            Text {
+              width: parent.width
+              text: "Prescribed gains (preamp " + root.state.preamp + " dB) · " + root.state.activePreset
+                + (root.state.perEar ? " · L/R" : " · averaged")
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
             }
           }
-
-          Button {
-            id: perEarButton
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.state.perEar ? "ON" : "OFF"
-            selected: root.state.perEar
-            focusable: true
-            enabled: !root.mutationBusy
-            onClicked: root.togglePerEar()
-          }
         }
 
-        Text {
-          text: "Prescribed gains (preamp " + root.state.preamp + " dB) · " + root.state.activePreset
-            + (root.state.perEar ? " · L/R" : " · averaged")
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+        Toggle {
+          width: parent.width
+          label: "Per-ear L/R"
+          description: "Independent left/right gains · default on for headphones, off for speakers"
+          checked: root.state.perEar
+          enabled: !root.mutationBusy
+          foreground: Color.menu.text
+          accent: Color.accent
+          fontFamily: root.fontFamily
+          onClicked: {
+            if (!root.mutationBusy)
+              root.togglePerEar()
+          }
         }
 
         Text {
