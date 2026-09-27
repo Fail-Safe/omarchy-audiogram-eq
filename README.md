@@ -107,11 +107,32 @@ omarchy plugin update failsafe.audiogram-eq
 
 ## Remove
 
+Clean up the audio path **while the plugin is still installed**, then remove it:
+
 ```sh
+# 1. Remove the WirePlumber fragment and restart WirePlumber
+~/.config/omarchy/plugins/failsafe.audiogram-eq/backend/agc reset
+
+# 2. Remove the plugin
 omarchy plugin remove failsafe.audiogram-eq --yes
-backend/agc reset   # optional: clear WirePlumber fragment + local state
 ```
 
+`agc reset` deletes `~/.config/wireplumber/wireplumber.conf.d/omarchy-audiogram-eq.conf`,
+clears plugin state under `~/.config/omarchy/audiogram-eq/`, and restarts the
+user WirePlumber service so the EQ sink disappears.
+
+If you skip step 1 and only remove the plugin, that fragment can keep shaping
+audio until you delete it (or reboot). Recovery without the plugin installed:
+
+```sh
+rm -f ~/.config/wireplumber/wireplumber.conf.d/omarchy-audiogram-eq.conf
+systemctl --user restart wireplumber.service
+# optional: drop saved intensity / mode state
+rm -f ~/.config/omarchy/audiogram-eq/state.json
+```
+
+Saved audiogram profiles under `~/.config/omarchy/audiogram-eq/profiles/` are
+left alone so a reinstall can pick them up again.
 ## Important safety note
 
 **Not a medical device.** Assistive desktop EQ from published thresholds —

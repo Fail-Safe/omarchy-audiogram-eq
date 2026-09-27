@@ -18,6 +18,9 @@ For a working-tree checkout:
 omarchy plugin add "$PWD" --enable
 ```
 
+Local `./uninstall.sh` runs `backend/agc reset` **before** unlinking so the
+WirePlumber fragment is cleared while the checkout is still available.
+
 ## Tests
 
 ```sh
