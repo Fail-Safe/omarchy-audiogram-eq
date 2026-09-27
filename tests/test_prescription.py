@@ -6,6 +6,9 @@ import json
 import unittest
 from pathlib import Path
 from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 AGC_PATH = ROOT / "backend" / "agc"
@@ -14,10 +17,18 @@ BLANK_PATH = ROOT / "profiles" / "custom.json"
 
 
 def load_agc():
-    return SourceFileLoader("audiogram_agc", str(AGC_PATH)).load_module()
+    loader = SourceFileLoader("audiogram_agc", str(AGC_PATH))
+    module = module_from_spec(spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    return module
 
 
 class PrescriptionTests(unittest.TestCase):
+    def setUp(self):
+        # Never read the developer's real audiogram or leave patched globals.
+        tmp = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.object(self.agc, "USER_PROFILES", Path(tmp) / "profiles"))
+
     @classmethod
     def setUpClass(cls):
         cls.agc = load_agc()
@@ -131,8 +142,8 @@ class PrescriptionTests(unittest.TestCase):
                     },
                     "params": {
                         "PropInfo": [
-                            {"name": "l_preamp:Gain"},
-                            {"name": "r_preamp:Gain"},
+                            {"name": "l_preamp:Mult"},
+                            {"name": "r_preamp:Mult"},
                             {"name": "l_eq_band_2:Gain"},
                             {"name": "r_eq_band_2:Freq"},
                             {"name": f"l_eq_band_{len(self.agc.BAND_FREQS) - 1}:Gain"},
@@ -143,8 +154,8 @@ class PrescriptionTests(unittest.TestCase):
             }
         ]
         controls = self.agc.control_params(objects)
-        self.assertIn(("l", None, "Gain"), controls)
-        self.assertIn(("r", None, "Gain"), controls)
+        self.assertIn(("l", None, "Mult"), controls)
+        self.assertIn(("r", None, "Mult"), controls)
         self.assertIn(("l", 2, "Gain"), controls)
         self.assertIn(("r", 2, "Freq"), controls)
         self.assertTrue(self.agc.dual_chain_ready(objects))

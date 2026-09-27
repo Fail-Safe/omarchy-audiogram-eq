@@ -28,6 +28,25 @@ python3 -m unittest discover -s tests -v
 omarchy plugin validate .
 ```
 
+The suite isolates user profiles/config and mocks audio mutations; it does not
+restart your audio service. Qt regression tests use `qmltestrunner` (from Qt
+Declarative), with an offscreen software renderer. They execute the production
+text blocks without launching the shell and skip if Qt's runner is unavailable.
+Keep these tests enabled when preparing a marketplace release.
+
+To also load the generated graph and verify live control readback against a
+private PipeWire server (temporary config/socket, no hardware or WirePlumber):
+
+```sh
+AUDIOGRAM_PIPEWIRE_TEST=1 python3 -m unittest discover -s tests -p test_pipewire_integration.py -v
+```
+
+This opt-in test requires `pipewire`, `pw-cli`, `pw-dump`, and permission to bind
+a local Unix socket. It never connects to the desktop's PipeWire socket.
+
+External strings must use `textFormat: Text.PlainText` at each QML `Text` sink.
+Do not escape labels in storage: literal angle brackets and Unicode must round-trip.
+
 ## Screenshots
 
 Sources live in `~/Pictures/`. Crop panel shots to the card (drop the bar);

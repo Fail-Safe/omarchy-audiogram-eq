@@ -21,6 +21,8 @@ Panel {
   // Mirrored for the bar icon so ON/OFF color updates reliably.
   property bool compensationEnabled: false
   property bool profileDirty: false
+  property int draftRevision: 0
+  property int saveRevision: -1
   property bool profileEditing: false
   property bool audiogramExpanded: true
   property bool audiogramUserToggled: false
@@ -209,6 +211,10 @@ Panel {
     syncDraftFrom(next)
     if (clearError)
       errorMessage = ""
+    // Status is read-only. Reconcile through the serialized mutation process,
+    // including when the panel is closed and Auto detects a different output.
+    if (next.needsApply && !root.mutationBusy && root.errorMessage === "")
+      enqueue(["apply"])
     Qt.callLater(function() {
       if (eqCurve)
         eqCurve.requestPaint()
@@ -229,7 +235,8 @@ Panel {
         // Keep the red error visible; do not immediately overwrite with status.
         return
       }
-      if (isMutation === true) {
+      if (isMutation === true && mutationProcess.command[2] === "profile-save"
+          && root.draftRevision === root.saveRevision) {
         root.profileDirty = false
         if (root.collapseAudiogramAfterSave) {
           root.audiogramExpanded = false
@@ -245,7 +252,7 @@ Panel {
   }
 
   function refresh() {
-    if (!statusProcess.running)
+    if (!statusProcess.running && !root.mutationBusy)
       statusProcess.running = true
   }
 
@@ -257,7 +264,7 @@ Panel {
   }
 
   function runNextMutation() {
-    if (mutationProcess.running || pendingCommands.length === 0)
+    if (statusProcess.running || mutationProcess.running || pendingCommands.length === 0)
       return
     var queue = pendingCommands.slice()
     var args = queue.shift()
@@ -293,6 +300,7 @@ Panel {
   }
 
   function markProfileDirty() {
+    root.draftRevision++
     root.profileDirty = true
   }
 
@@ -328,8 +336,9 @@ Panel {
       left: left,
       right: right
     })
-    enqueue(["profile-save", payload])
+    root.saveRevision = root.draftRevision
     root.collapseAudiogramAfterSave = true
+    enqueue(["profile-save", payload])
   }
 
   function revertProfile() {
@@ -362,6 +371,7 @@ Panel {
           root.showError(text.trim())
       }
     }
+    onExited: root.runNextMutation()
   }
 
   Process {
@@ -388,7 +398,7 @@ Panel {
 
   Timer {
     interval: 4000
-    running: root.opened
+    running: root.opened || root.state.enabled
     repeat: true
     onTriggered: root.refresh()
   }
@@ -498,6 +508,7 @@ Panel {
 
             Text {
               width: parent.width
+              textFormat: Text.PlainText
               text: root.state.profileLabel + " · " + root.state.deviceName
               color: root.dim
               font.family: root.fontFamily
@@ -521,6 +532,7 @@ Panel {
         Text {
           width: parent.width
           visible: root.errorMessage !== ""
+          textFormat: Text.PlainText
           text: root.errorMessage
           color: Color.urgent
           font.family: root.fontFamily
@@ -563,6 +575,7 @@ Panel {
             Text {
               width: parent.width
               visible: !root.audiogramExpanded
+              textFormat: Text.PlainText
               text: root.audiogramSummary()
               color: root.dim
               font.family: root.fontFamily
@@ -826,6 +839,7 @@ Panel {
 
             Text {
               width: parent.width
+              textFormat: Text.PlainText
               text: "Prescribed gains (preamp " + root.state.preamp + " dB) · " + root.state.activePreset
                 + (root.state.perEar ? " · L/R" : " · averaged")
               color: root.dim
@@ -1001,6 +1015,7 @@ Panel {
 
         Text {
           width: parent.width
+          textFormat: Text.PlainText
           text: root.state.disclaimer
           color: root.dim
           font.family: root.fontFamily

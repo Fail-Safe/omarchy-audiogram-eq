@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "failsafe.audiogram-eq",
   "name": "Audiogram EQ",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "Fail-Safe",
   "license": "MIT",
   "description": "Listener-compensating equalizer. Ships blank (0 dB HL); enter clinical audiogram thresholds in the panel. Headphones/speakers presets and optional per-ear L/R gains.",

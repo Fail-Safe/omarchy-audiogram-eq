@@ -301,7 +301,7 @@ def clamp_threshold(value: Any, default: int = 0) -> int:
         return int(default)
     try:
         number = int(round(float(value)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return int(default)
     return int(clamp(number, THRESHOLD_MIN, THRESHOLD_MAX))
 
@@ -372,7 +372,7 @@ def interpolate_threshold(curve: dict[str, Any], frequency: int) -> float | None
             db = float(value)
         except (TypeError, ValueError):
             continue
-        if math.isfinite(db):
+        if hz > 0 and math.isfinite(db):
             points.append((hz, db))
     if not points:
         return None
@@ -395,6 +395,8 @@ def interpolate_threshold(curve: dict[str, Any], frequency: int) -> float | None
 
 def ear_threshold(profile: dict[str, Any], ear: str, frequency: int) -> float | None:
     thresholds = profile.get("thresholdsDbHl") or {}
+    if not isinstance(thresholds, dict):
+        return None
     curve = thresholds.get(ear) or {}
     if not isinstance(curve, dict):
         return None
@@ -624,12 +626,12 @@ def resolve_preset(state: dict[str, Any], objects: list[dict[str, Any]] | None =
 
 def graph_nodes(bands: list[dict[str, Any]], preamp: float, enabled: bool) -> str:
     """Dual-mono graph: FL through l_*, FR through r_*."""
-    pre = preamp if enabled else 0.0
+    pre = 10 ** (preamp / 20.0) if enabled else 1.0
     lines: list[str] = []
     for ear in ("l", "r"):
         lines.append(
-            f'          {{ type = builtin name = {ear}_preamp label = bq_lowshelf '
-            f'control = {{ "Freq" = 20.0 "Q" = 1.0 "Gain" = {pre} }} }}'
+            f'          {{ type = builtin name = {ear}_preamp label = linear '
+            f'control = {{ "Mult" = {pre} "Add" = 0.0 }} }}'
         )
         for index, band in enumerate(bands):
             label = {"low-shelf": "bq_lowshelf", "high-shelf": "bq_highshelf", "peaking": "bq_peaking"}[band["type"]]
@@ -736,9 +738,7 @@ def control_params(objects: list[dict[str, Any]]) -> dict[tuple[str, int | None,
         if not isinstance(entry, dict):
             continue
         name = str(entry.get("name", ""))
-        # Groups: ear, band_index|None, control. Keep the alternation non-capturing
-        # except for the band digits so Freq|Q|Gain stays group 3.
-        match = re.fullmatch(r"([lr])_(?:eq_band_(\d+)|preamp):(Freq|Q|Gain)", name)
+        match = re.fullmatch(r"([lr])_(?:eq_band_(\d+)|preamp):(Freq|Q|Gain|Mult|Add)", name)
         if not match:
             continue
         ear = match.group(1)
@@ -750,15 +750,17 @@ def control_params(objects: list[dict[str, Any]]) -> dict[tuple[str, int | None,
 def dual_chain_ready(objects: list[dict[str, Any]]) -> bool:
     """True when dual-mono controls exist for the current band count."""
     controls = control_params(objects)
-    if ("l", None, "Gain") not in controls or ("r", None, "Gain") not in controls:
+    # Mult distinguishes the broadband preamp from the old 20 Hz low shelf.
+    if ("l", None, "Mult") not in controls or ("r", None, "Mult") not in controls:
         return False
     last = len(BAND_FREQS) - 1
     return ("l", last, "Gain") in controls and ("r", last, "Gain") in controls
 
 
-def set_control(node_id: str, name: str, value: float) -> None:
-    payload = json.dumps({"params": [name, value]}, separators=(",", ":"))
-    require_ok(run(["pw-cli", "set-param", node_id, "Props", payload], 1.5), f"set {name}")
+def set_controls(node_id: str, values: list[Any]) -> None:
+    # Send one Props update so a drag does not apply dozens of partial curves.
+    payload = json.dumps({"params": values}, separators=(",", ":"))
+    require_ok(run(["pw-cli", "set-param", node_id, "Props", payload], 3.0), "set EQ controls")
 
 
 def apply_runtime(bands: list[dict[str, Any]], preamp: float, enabled: bool, objects: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -768,7 +770,7 @@ def apply_runtime(bands: list[dict[str, Any]], preamp: float, enabled: bool, obj
     controls = control_params(objects)
     needed: list[tuple[str, int | None, str]] = []
     for ear in ("l", "r"):
-        needed.extend((ear, None, key) for key in ("Freq", "Q", "Gain"))
+        needed.extend((ear, None, key) for key in ("Mult", "Add"))
         needed.extend((ear, index, key) for index in range(len(BAND_FREQS)) for key in ("Freq", "Q", "Gain"))
     missing = [f"{ear}:{idx}:{key}" for ear, idx, key in needed if (ear, idx, key) not in controls]
     if missing:
@@ -778,27 +780,26 @@ def apply_runtime(bands: list[dict[str, Any]], preamp: float, enabled: bool, obj
     if missing:
         raise RuntimeError("filter controls unavailable: " + ", ".join(missing[:12]))
 
+    values: list[Any] = []
     for ear in ("l", "r"):
         gain_key = "leftGain" if ear == "l" else "rightGain"
+        values.extend([controls[(ear, None, "Mult")]["name"], 10 ** (preamp / 20.0) if enabled else 1.0])
+        values.extend([controls[(ear, None, "Add")]["name"], 0.0])
         for index, band in enumerate(bands):
-            set_control(controls[(ear, index, "Freq")]["node"], controls[(ear, index, "Freq")]["name"], float(band["frequency"]))
-            set_control(controls[(ear, index, "Q")]["node"], controls[(ear, index, "Q")]["name"], float(band["q"]))
+            values.extend([controls[(ear, index, "Freq")]["name"], float(band["frequency"])])
+            values.extend([controls[(ear, index, "Q")]["name"], float(band["q"])])
             gain = float(band.get(gain_key, band["gain"])) if enabled else 0.0
-            set_control(controls[(ear, index, "Gain")]["node"], controls[(ear, index, "Gain")]["name"], gain)
-        set_control(controls[(ear, None, "Freq")]["node"], controls[(ear, None, "Freq")]["name"], 20.0)
-        set_control(controls[(ear, None, "Q")]["node"], controls[(ear, None, "Q")]["name"], 1.0)
-        set_control(
-            controls[(ear, None, "Gain")]["node"],
-            controls[(ear, None, "Gain")]["name"],
-            float(preamp) if enabled else 0.0,
-        )
+            values.extend([controls[(ear, index, "Gain")]["name"], gain])
+    set_controls(controls[("l", None, "Mult")]["node"], values)
     return objects
 
 
 def ensure_graph(bands: list[dict[str, Any]], preamp: float, enabled: bool) -> list[dict[str, Any]]:
     objects = dump_objects()
     if eq_node(objects) and dual_chain_ready(objects):
-        return apply_runtime(bands, preamp, enabled, objects)
+        objects = apply_runtime(bands, preamp, enabled, objects)
+        write_wireplumber_fragment(bands, preamp, enabled)
+        return objects
     # Create or migrate from the older single-chain fragment.
     write_wireplumber_fragment(bands, preamp, enabled)
     restart_wireplumber()
@@ -847,6 +848,10 @@ def build_preview(state: dict[str, Any], objects: list[dict[str, Any]] | None = 
         "graphPresent": bool(eq_node(objects)),
         "dualChain": dual_chain_ready(objects) if eq_node(objects) else False,
         "fragmentPresent": WP_FRAGMENT.exists(),
+        "needsApply": bool(
+            (state["enabled"] and state["activePreset"] != preset)
+            or ((state["enabled"] or eq_node(objects)) and not dual_chain_ready(objects))
+        ),
     }
 
 
@@ -961,11 +966,14 @@ def cmd_apply(
             objects = ensure_graph(bands, preamp, True)
             set_default_to_eq(objects)
         else:
+            # Persist bypass even if the live graph disappeared. Otherwise the
+            # next service restart could restore the last enabled prescription.
+            if WP_FRAGMENT.exists() or eq_node(objects):
+                write_wireplumber_fragment(bands, preamp, False)
             if eq_node(objects) and dual_chain_ready(objects):
                 apply_runtime(bands, preamp, False, objects)
             elif eq_node(objects):
-                # Old single-chain still present; migrate flat then leave disabled.
-                write_wireplumber_fragment(bands, preamp, False)
+                # Old graph still present; migrate flat then leave disabled.
                 restart_wireplumber()
         save_state(state)
         payload = build_preview(state)
@@ -1070,10 +1078,13 @@ def main(argv: list[str] | None = None) -> int:
     if command == "intensity":
         return cmd_apply(as_json, intensity=args.value)
     if command == "per-ear":
-        state = load_state()
-        objects = dump_objects()
-        preset, _, _ = resolve_preset(state, objects)
-        current = per_ear_for(state, preset)
+        try:
+            state = load_state()
+            objects = dump_objects()
+            preset, _, _ = resolve_preset(state, objects)
+            current = per_ear_for(state, preset)
+        except Exception as exc:
+            return emit({"error": str(exc)}, as_json)
         if args.value == "on":
             value = True
         elif args.value == "off":

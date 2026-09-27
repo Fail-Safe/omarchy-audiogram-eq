@@ -49,6 +49,8 @@ Canvas {
   }
 
   function sectionDb(shape, frequency, corner, q, gain, rate) {
+    if (shape === "preamp")
+      return gain
     var w0 = 2 * Math.PI * corner / rate
     var alpha = Math.sin(w0) / (2 * Math.max(q, 0.05))
     var c = Math.cos(w0)
@@ -86,8 +88,8 @@ Canvas {
     var sections = []
     var pre = root.enabled ? Number(root.preamp) || 0 : 0
     sections.push({
-      shape: "lowshelf",
-      frequency: 20,
+      shape: "preamp",
+      frequency: 0,
       q: 1.0,
       gain: pre,
       label: "P",

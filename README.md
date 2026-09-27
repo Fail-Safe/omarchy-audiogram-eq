@@ -55,7 +55,14 @@ gain = clamp(0, 12, 0.5 * max(0, threshold − 20)) × intensity
   (FL → `l_*`, FR → `r_*`).
 - **Per-ear off:** both ears get the averaged curve.
 - **Auto:** picks headphones vs speakers from the current sink, then applies
-  that mode’s saved intensity and per-ear setting.
+  that mode’s saved intensity and per-ear setting. While enabled, the widget
+  checks for output changes every four seconds, including with the panel closed.
+
+The preamp applies broadband attenuation equal to the largest prescribed band
+boost. Overlapping filters can still produce higher peaks; this is not a limiter.
+OFF makes the graph flat and persists that bypass across service restarts.
+Disabling or removing the widget in Omarchy does not itself undo the audio graph;
+use OFF to bypass it, or follow **Remove** below to remove it completely.
 
 ## Bar icon colors
 
@@ -105,6 +112,11 @@ override bundled ones with the same id).
 omarchy plugin update failsafe.audiogram-eq
 ```
 
+Version 1.0.3 replaces the old low-shelf preamp with broadband gain. The first
+apply migrates an older graph with one user WirePlumber restart, which can briefly
+interrupt audio. The widget migrates an existing older graph automatically; a CLI-only
+installation can run `backend/agc apply` after updating.
+
 ## Remove
 
 Clean up the audio path **while the plugin is still installed**, then remove it:
@@ -122,17 +134,22 @@ clears plugin state under `~/.config/omarchy/audiogram-eq/`, and restarts the
 user WirePlumber service so the EQ sink disappears.
 
 If you skip step 1 and only remove the plugin, that fragment can keep shaping
-audio until you delete it (or reboot). Recovery without the plugin installed:
+audio, including after a reboot. Recovery without the plugin installed:
 
 ```sh
-rm -f ~/.config/wireplumber/wireplumber.conf.d/omarchy-audiogram-eq.conf
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+rm -f "$config_dir/wireplumber/wireplumber.conf.d/omarchy-audiogram-eq.conf"
 systemctl --user restart wireplumber.service
 # optional: drop saved intensity / mode state
-rm -f ~/.config/omarchy/audiogram-eq/state.json
+rm -f "$config_dir/omarchy/audiogram-eq/state.json"
 ```
 
 Saved audiogram profiles under `~/.config/omarchy/audiogram-eq/profiles/` are
 left alone so a reinstall can pick them up again.
+
+Backend config and profile paths shown above use the default `~/.config` root.
+If `XDG_CONFIG_HOME` is set, the backend uses that root instead. Omarchy's plugin
+installation path remains `~/.config/omarchy/plugins/`.
 ## Important safety note
 
 **Not a medical device.** Assistive desktop EQ from published thresholds —
