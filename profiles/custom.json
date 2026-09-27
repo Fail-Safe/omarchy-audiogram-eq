@@ -1,0 +1,27 @@
+{
+  "id": "custom",
+  "label": "My audiogram",
+  "disclaimer": "Assistive desktop EQ from published thresholds. Not a hearing aid, not a medical device, and not a substitute for clinical fitting.",
+  "thresholdsDbHl": {
+    "right": {
+      "250": 0,
+      "500": 0,
+      "1000": 0,
+      "2000": 0,
+      "3000": 0,
+      "4000": 0,
+      "6000": 0,
+      "8000": 0
+    },
+    "left": {
+      "250": 0,
+      "500": 0,
+      "1000": 0,
+      "2000": 0,
+      "3000": 0,
+      "4000": 0,
+      "6000": 0,
+      "8000": 0
+    }
+  }
+}

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Local-only helpers. Marketplace install is `omarchy plugin add` so listing
+# updates avoid installer capability review (same pattern as omarchy-dexcom).
+install.sh
+uninstall.sh

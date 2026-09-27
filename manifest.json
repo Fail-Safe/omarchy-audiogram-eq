@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "failsafe.audiogram-eq",
+  "name": "Audiogram EQ",
+  "version": "1.0.0",
+  "author": "Fail-Safe",
+  "license": "MIT",
+  "description": "Listener-compensating equalizer. Ships blank (0 dB HL); enter clinical audiogram thresholds in the panel. Headphones/speakers presets and optional per-ear L/R gains.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Audiogram EQ",
+    "description": "Apply hearing-loss compensation from an audiogram to general sound output.",
+    "category": "Audio",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "iconColors": "status"
+    },
+    "schema": [
+      {
+        "key": "iconColors",
+        "type": "enum",
+        "label": "Bar icon colors",
+        "options": ["status", "theme"],
+        "defaultValue": "status",
+        "description": "status = fixed green/red for ON/OFF. theme = accent when on, muted when off (follows your Omarchy theme)."
+      }
+    ]
+  }
+}
