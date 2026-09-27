@@ -256,9 +256,9 @@ Panel {
       statusProcess.running = true
   }
 
-  function enqueue(args) {
+  function enqueue(args, inputPayload) {
     var queue = pendingCommands.slice()
-    queue.push(args)
+    queue.push({ args: args, input: inputPayload || "" })
     pendingCommands = queue
     runNextMutation()
   }
@@ -267,9 +267,11 @@ Panel {
     if (statusProcess.running || mutationProcess.running || pendingCommands.length === 0)
       return
     var queue = pendingCommands.slice()
-    var args = queue.shift()
+    var request = queue.shift()
     pendingCommands = queue
-    mutationProcess.command = [backendPath, "--json"].concat(args)
+    mutationProcess.command = [backendPath, "--json"].concat(request.args)
+    mutationProcess.inputPayload = request.input
+    mutationProcess.stdinEnabled = request.input !== ""
     mutationProcess.running = true
   }
 
@@ -287,10 +289,10 @@ Panel {
     // backlog one process per step.
     var queue = []
     for (var i = 0; i < pendingCommands.length; i++) {
-      if (pendingCommands[i][0] !== "intensity")
+      if (pendingCommands[i].args[0] !== "intensity")
         queue.push(pendingCommands[i])
     }
-    queue.push(["intensity", rounded])
+    queue.push({ args: ["intensity", rounded], input: "" })
     pendingCommands = queue
     runNextMutation()
   }
@@ -338,7 +340,7 @@ Panel {
     })
     root.saveRevision = root.draftRevision
     root.collapseAudiogramAfterSave = true
-    enqueue(["profile-save", payload])
+    enqueue(["profile-save"], payload)
   }
 
   function revertProfile() {
@@ -376,6 +378,14 @@ Panel {
 
   Process {
     id: mutationProcess
+    property string inputPayload: ""
+    onStarted: {
+      if (inputPayload !== "")
+        write(inputPayload)
+      inputPayload = ""
+      // Deliver EOF after queued bytes; reopen before the next profile save.
+      stdinEnabled = false
+    }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.parseResult(text, true)

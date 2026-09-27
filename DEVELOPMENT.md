@@ -34,6 +34,10 @@ Declarative), with an offscreen software renderer. They execute the production
 text blocks without launching the shell and skip if Qt's runner is unavailable.
 Keep these tests enabled when preparing a marketplace release.
 
+When `qs` is installed, the suite also runs a temporary offscreen Quickshell
+instance to check queued profile saves over stdin and inspect child command lines.
+It does not load the desktop shell or invoke the audio backend.
+
 To also load the generated graph and verify live control readback against a
 private PipeWire server (temporary config/socket, no hardware or WirePlumber):
 
@@ -46,6 +50,8 @@ a local Unix socket. It never connects to the desktop's PipeWire socket.
 
 External strings must use `textFormat: Text.PlainText` at each QML `Text` sink.
 Do not escape labels in storage: literal angle brackets and Unicode must round-trip.
+Keep audiogram JSON on stdin, never in process arguments, environment variables,
+or shell command strings. CLI saves use `backend/agc profile-save < private.json`.
 
 ## Screenshots
 

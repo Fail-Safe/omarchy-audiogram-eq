@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -132,7 +133,13 @@ Item {
     property var bar: null
     property bool opened: false
     QtObject { id: statusProcess; property bool running: false }
-    QtObject { id: mutationProcess; property bool running: false; property var command: [] }
+    QtObject {
+        id: mutationProcess
+        property bool running: false
+        property var command: []
+        property string inputPayload: ""
+        property bool stdinEnabled: false
+    }
     QtObject { id: labelField; property bool activeFocus: false; property string text: "" }
     QtObject { id: eqCurve; function requestPaint() {} }
     TestCase {
@@ -185,6 +192,19 @@ Item {
             root.parseResult(JSON.stringify({ready: true, profileLabel: "Old saved label"}), true)
             verify(root.profileDirty)
             compare(root.draftLabel, "Unsaved <label>")
+        }
+        function test_profile_data_never_enters_command_arguments() {
+            root.draftLabel = "Private audiogram 日本語"
+            root.draftThresholds = [{frequency: 1000, left: 37, right: 42}]
+            root.markProfileDirty()
+            root.saveProfile()
+            compare(mutationProcess.command.length, 3)
+            compare(mutationProcess.command[2], "profile-save")
+            var payload = JSON.parse(mutationProcess.inputPayload)
+            compare(payload.label, "Private audiogram 日本語")
+            compare(payload.left["1000"], 37)
+            compare(payload.right["1000"], 42)
+            verify(mutationProcess.stdinEnabled)
         }
         function test_successful_save_clears_only_saved_revision() {
             root.draftLabel = "Saved label"
@@ -245,3 +265,98 @@ Canvas {
 }
 '''.replace("BODY", body)
         self.run_qml(qml)
+
+    @unittest.skipUnless(shutil.which("qs"), "Quickshell is not installed")
+    def test_real_process_stdin_reopens_for_queued_saves(self):
+        source = (ROOT / "Panel.qml").read_text()
+        functions = []
+        for name in ("enqueue", "runNextMutation", "setIntensity"):
+            tail = source.split("  function " + name + "(", 1)[1]
+            functions.append("function " + name + "(" + tail.split("\n  function ", 1)[0])
+        process = "Process {\n    id: mutationProcess" + source.split("  Process {\n    id: mutationProcess", 1)[1].split("\n  Timer {", 1)[0]
+        qml = '''import QtQuick
+import Quickshell
+import Quickshell.Io
+ShellRoot {
+    id: root
+    property string backendPath: BACKEND
+    property var pendingCommands: []
+    property var results: []
+    property string errorMessage: ""
+    function parseResult(text, mutation) { results = results.concat([JSON.parse(text)]) }
+    function showError(text) { errorMessage = text }
+    FUNCTIONS
+    QtObject { id: statusProcess; property bool running: false }
+    PROCESS
+    Timer {
+        interval: 5000; running: true
+        onTriggered: {
+            console.error("STDIN_TIMEOUT results=" + root.results.length
+                + " pending=" + root.pendingCommands.length + " running=" + mutationProcess.running)
+            Qt.quit()
+        }
+    }
+    property string first: JSON.stringify({label: "PRIVATE-ONE 日本語", left: {1000: 37}})
+    property string second: JSON.stringify({label: "PRIVATE-TWO\\nquoted \\\"value\\\"", right: {1000: 42}})
+    function compare(actual, expected) {
+        if (JSON.stringify(actual) !== JSON.stringify(expected))
+            throw new Error("stdin/argument mismatch")
+    }
+    function verify(value) { if (!value) throw new Error("private argv check failed") }
+    Component.onCompleted: {
+            statusProcess.running = true
+            root.enqueue(["profile-save"], root.first)
+            root.setIntensity(20)
+            root.setIntensity(30)
+            root.enqueue(["profile-save"], root.second)
+            compare(root.pendingCommands.length, 3)
+            statusProcess.running = false
+            root.runNextMutation()
+    }
+    Timer {
+        interval: 20; repeat: true; running: true
+        onTriggered: {
+          if (root.results.length !== 3) return
+          stop()
+          try {
+            compare(root.errorMessage, "")
+            compare(root.results[0].input, root.first)
+            compare(root.results[1].input, "")
+            compare(root.results[2].input, root.second)
+            compare(root.results[0].args, ["--json", "profile-save"])
+            compare(root.results[1].args, ["--json", "intensity", "30"])
+            compare(root.results[2].args, ["--json", "profile-save"])
+            compare(mutationProcess.inputPayload, "")
+            for (var result of root.results)
+                verify(result.cmdline.indexOf("PRIVATE-") === -1)
+            console.log("STDIN_TEST_PASSED")
+          } catch (error) {
+            console.error("STDIN_TEST_FAILED")
+          }
+          Qt.quit()
+        }
+    }
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="audiogram-stdin-") as tmp:
+            child = Path(tmp) / "receiver"
+            child.write_text("#!" + sys.executable + "\n"
+                "import json, os, sys\n"
+                "from pathlib import Path\n"
+                "payload = sys.stdin.read() if 'profile-save' in sys.argv else ''\n"
+                "cmdline = Path(f'/proc/{os.getpid()}/cmdline').read_bytes().decode()\n"
+                "print(json.dumps({'input': payload, 'args': sys.argv[1:], 'cmdline': cmdline}))\n")
+            child.chmod(0o700)
+            qml = (qml.replace("BACKEND", json.dumps(str(child)))
+                   .replace("FUNCTIONS", "\n".join(functions)).replace("PROCESS", process))
+            config = Path(tmp) / "shell.qml"
+            config.write_text(qml)
+            try:
+                result = subprocess.run([shutil.which("qs"), "-p", str(config)], capture_output=True,
+                    text=True, timeout=15, env={**os.environ, "QT_QPA_PLATFORM": "offscreen",
+                        "QT_QUICK_BACKEND": "software", "QT_QPA_PLATFORMTHEME": "",
+                        "XDG_RUNTIME_DIR": tmp, "XDG_CACHE_HOME": tmp, "XDG_STATE_HOME": tmp})
+            except subprocess.TimeoutExpired as exc:
+                self.fail(f"Quickshell timed out: {exc.stdout!r} {exc.stderr!r}")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("STDIN_TEST_PASSED", result.stdout + result.stderr)

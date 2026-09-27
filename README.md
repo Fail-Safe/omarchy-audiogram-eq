@@ -97,12 +97,18 @@ backend/agc disable
 backend/agc mode auto|headphones|speakers
 backend/agc intensity 75
 backend/agc per-ear on|off|toggle
-backend/agc profile-save '{"label":"My audiogram","left":{"250":20,...},"right":{...}}'
+backend/agc profile-save < /path/to/private-profile.json
 backend/agc preview --json
 backend/agc apply
 backend/agc doctor --json
 backend/agc reset
 ```
+
+`profile-save` reads a JSON object with `label`, `left`, and `right` threshold
+maps from **stdin**. The panel also sends saves through a private stdin pipe;
+labels and hearing thresholds never go in its process arguments. The former
+`profile-save '<JSON>'` form is no longer supported. For CLI saves, keep the
+input file private (for example, mode `600`) and use input redirection as above.
 
 ## Profile format
 

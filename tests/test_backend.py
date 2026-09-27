@@ -3,8 +3,10 @@ import contextlib
 import io
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -140,3 +142,59 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.agc.clamp_threshold(float("nan")), 0)
         self.assertEqual(self.agc.interpolate_threshold({"0": 20, "-1": 20, "1000": 30}, 250), 30)
         self.assertIsNone(self.agc.ear_threshold({"thresholdsDbHl": []}, "left", 1000))
+
+    def test_profile_save_stdin_preserves_supported_payloads(self):
+        for payload in (
+            {"label": 'Private 日本語 "label"', "left": {"1000": 37}, "right": {"1000": 42}},
+            {"label": "Nested", "thresholdsDbHl": {"left": {"1000": 37}, "right": {"1000": 42}}},
+            {"label": "Rows", "thresholds": [{"frequency": 1000, "left": 37, "right": 42}]},
+        ):
+            with self.subTest(payload=payload), patch.object(sys, "stdin", io.StringIO(json.dumps(payload))), \
+                 patch.object(self.agc, "cmd_apply", return_value=0):
+                self.assertEqual(self.agc.main(["profile-save", "--json"]), 0)
+            saved = self.agc.load_profile("custom")
+            self.assertEqual(saved["label"], payload["label"])
+            self.assertEqual(saved["thresholdsDbHl"]["left"]["1000"], 37)
+            self.assertEqual(saved["thresholdsDbHl"]["right"]["1000"], 42)
+            self.assertEqual((self.agc.USER_PROFILES / "custom.json").stat().st_mode & 0o777, 0o600)
+
+    def test_profile_save_rejects_bad_stdin_and_legacy_args_without_echo(self):
+        original = (self.agc.USER_PROFILES / "custom.json").read_text()
+        for raw in ("", "not-json PRIVATE-MARKER", "[]", "x" * 65537):
+            with self.subTest(raw=raw[:30]), patch.object(sys, "stdin", io.StringIO(raw)), \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(self.agc.main(["--json", "profile-save"]), 1)
+            self.assertIn("error", json.loads(output.getvalue()))
+            self.assertNotIn("PRIVATE-MARKER", output.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(self.agc.main(["--json", "profile-save", '{"label":"PRIVATE-MARKER"}']), 1)
+        self.assertNotIn("PRIVATE-MARKER", output.getvalue())
+        self.assertEqual((self.agc.USER_PROFILES / "custom.json").read_text(), original)
+
+    def test_live_profile_save_has_no_health_data_in_proc_cmdline(self):
+        # Backend blocks awaiting stdin; inspect argv before delivering health data.
+        config = self.tmp / "config"
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        for name, reply in (("pw-dump", "[]"), ("pactl", "test-speaker")):
+            tool = bin_dir / name
+            tool.write_text("#!/bin/sh\nprintf '%s\\n' '" + reply + "'\n")
+            tool.chmod(0o700)
+        payload = {"label": "PRIVATE-HEARING-MARKER 日本語", "left": {"1000": 37}, "right": {"1000": 42}}
+        command = [sys.executable, str(Path(self.agc.__file__)), "--json", "profile-save"]
+        with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, env={**os.environ, "XDG_CONFIG_HOME": str(config), "PATH": str(bin_dir)}) as process:
+            try:
+                cmdline = Path(f"/proc/{process.pid}/cmdline").read_bytes()
+                self.assertNotIn(b"PRIVATE-HEARING-MARKER", cmdline)
+                self.assertNotIn(b'"left"', cmdline)
+                self.assertNotIn(b'"right"', cmdline)
+                stdout, stderr = process.communicate(json.dumps(payload), timeout=10)
+                self.assertEqual(process.returncode, 0, stderr + stdout)
+                self.assertEqual(json.loads(stdout)["profileLabel"], payload["label"])
+                saved = json.loads((config / "omarchy/audiogram-eq/profiles/custom.json").read_text())
+                self.assertEqual(saved["thresholdsDbHl"]["left"]["1000"], 37)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()

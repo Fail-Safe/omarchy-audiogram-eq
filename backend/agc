@@ -98,6 +98,7 @@ DEFAULT_DISCLAIMER = (
 USER_PROFILES = ROOT / "profiles"
 THRESHOLD_MIN = 0
 THRESHOLD_MAX = 120
+MAX_PROFILE_INPUT = 65536
 
 
 def clone(value: Any) -> Any:
@@ -1047,8 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
     per_ear = sub.add_parser("per-ear", help="Enable/disable independent left/right EQ for the active preset")
     per_ear.add_argument("value", choices=["on", "off", "toggle"])
 
-    profile_save = sub.add_parser("profile-save", help="Save editable audiogram thresholds for the active profile")
-    profile_save.add_argument("payload", help="JSON object with label + left/right threshold maps")
+    sub.add_parser("profile-save", help="Save audiogram JSON from stdin (never pass health data as arguments)",
+                   description="Read a JSON object with label and left/right threshold maps from stdin.")
 
     return parser
 
@@ -1060,6 +1061,9 @@ def main(argv: list[str] | None = None) -> int:
     if "--json" in argv:
         as_json = True
         argv = [arg for arg in argv if arg != "--json"]
+    # Retired argv transport: reject without echoing personal data in errors.
+    if argv and argv[0] == "profile-save" and len(argv) > 1 and argv[1:] not in (["-h"], ["--help"]):
+        return emit({"error": "profile-save reads JSON from stdin; use input redirection, not arguments"}, as_json)
     parser = build_parser()
     args = parser.parse_args(argv)
     as_json = as_json or bool(args.json)
@@ -1093,7 +1097,13 @@ def main(argv: list[str] | None = None) -> int:
             value = not current
         return cmd_apply(as_json, per_ear=value)
     if command == "profile-save":
-        return cmd_profile_save(as_json, args.payload)
+        try:
+            payload = sys.stdin.read(MAX_PROFILE_INPUT + 1)
+        except (OSError, UnicodeError):
+            return emit({"error": "could not read profile JSON from stdin"}, as_json)
+        if len(payload) > MAX_PROFILE_INPUT:
+            return emit({"error": "profile JSON exceeds the 65536-character limit"}, as_json)
+        return cmd_profile_save(as_json, payload)
     if command == "reset":
         return cmd_reset(as_json)
     if command == "doctor":
