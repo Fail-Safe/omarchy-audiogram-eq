@@ -33,6 +33,11 @@ Enabling EQ does nothing useful until you enter a chart.
 1. Open the panel → **AUDIOGRAM (dB HL)** → **Edit**
 2. Fill left/right thresholds at 250 / 500 / 1k / 2k / 3k / 4k / 6k / 8k
 3. **Save audiogram**
+4. Enable compensation, then adjust **tonal correction strength** while listening
+   to familiar audio. Both headphones and speakers start at **30%**. Because
+   personal hearing curves and audio preferences vary, you will very likely want
+   to adjust the strength **after entering your audiogram figures**. Treat 30% as
+   a starting point, not a target; each mode saves its own setting.
 
 Leave unused bands at `0` if your clinic chart omits them. Saves go to
 `~/.config/omarchy/audiogram-eq/profiles/` (never into the plugin tree).
@@ -40,22 +45,27 @@ Leave unused bands at `0` if your clinic chart omits them. Saves go to
 ## How it works
 
 One half-gain style curve from the audiogram. Speakers and headphones share
-the same mapping; only intensity (and optional per-ear L/R) differ.
+the same mapping; only tonal correction strength (and optional per-ear L/R) differ.
 
 ```
-gain = clamp(0, 12, 0.5 * max(0, threshold − 20)) × intensity
+gain = clamp(0, 12, 0.5 * max(0, threshold − 20)) × (strength / 100)
 ```
 
-| Mode | Default intensity | Default per-ear L/R |
+| Mode | Default tonal correction strength | Default per-ear L/R |
 |---|---:|:---:|
-| Headphones | 100% | On |
-| Speakers | 50% | Off |
+| Headphones | 30% | On |
+| Speakers | 30% | Off |
+
+Strength controls how strongly the audiogram shapes the tonal balance, not the
+overall playback volume. Higher strength also increases preamp attenuation, so
+less-boosted frequencies can become quieter. Existing saved strengths are preserved
+when updating; the 30% defaults apply to new or unset preferences.
 
 - **Per-ear on:** left and right thresholds drive separate dual-mono chains
   (FL → `l_*`, FR → `r_*`).
 - **Per-ear off:** both ears get the averaged curve.
 - **Auto:** picks headphones vs speakers from the current sink, then applies
-  that mode’s saved intensity and per-ear setting. While enabled, the widget
+  that mode’s saved strength and per-ear setting. While enabled, the widget
   checks for output changes every four seconds, including with the panel closed.
 
 The preamp applies broadband attenuation equal to the largest prescribed band
@@ -75,6 +85,8 @@ omarchy bar set failsafe.audiogram-eq iconColors status   # green / urgent (defa
 ```
 
 ## CLI
+
+The CLI command for tonal correction strength remains `intensity`.
 
 From the installed plugin directory (or a local checkout):
 
@@ -140,7 +152,7 @@ audio, including after a reboot. Recovery without the plugin installed:
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
 rm -f "$config_dir/wireplumber/wireplumber.conf.d/omarchy-audiogram-eq.conf"
 systemctl --user restart wireplumber.service
-# optional: drop saved intensity / mode state
+# optional: drop saved strength / mode state
 rm -f "$config_dir/omarchy/audiogram-eq/state.json"
 ```
 

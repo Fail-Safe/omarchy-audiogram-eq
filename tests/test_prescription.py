@@ -72,8 +72,12 @@ class PrescriptionTests(unittest.TestCase):
 
     def test_default_intensity_slots(self):
         state = self.agc.safe_state({})
-        self.assertEqual(self.agc.intensity_for(state, "headphones"), 100)
-        self.assertEqual(self.agc.intensity_for(state, "speakers"), 50)
+        self.assertEqual(self.agc.intensity_for(state, "headphones"), 30)
+        self.assertEqual(self.agc.intensity_for(state, "speakers"), 30)
+        saved = self.agc.safe_state({"intensityByPreset": {"headphones": 100, "speakers": 50}})
+        self.assertEqual(saved["intensityByPreset"], {"headphones": 100, "speakers": 50})
+        partial = self.agc.safe_state({"intensityByPreset": {"speakers": 0}})
+        self.assertEqual(partial["intensityByPreset"], {"headphones": 30, "speakers": 0})
 
     def test_per_preset_intensity_is_independent(self):
         state = self.agc.safe_state({})

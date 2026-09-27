@@ -41,8 +41,8 @@ Panel {
     enabled: false,
     mode: "auto",
     activePreset: "speakers",
-    intensity: 50,
-    intensityByPreset: ({ headphones: 100, speakers: 50 }),
+    intensity: 30,
+    intensityByPreset: ({ headphones: 30, speakers: 30 }),
     perEar: false,
     perEarByPreset: ({ headphones: true, speakers: false }),
     profileId: "custom",
@@ -795,7 +795,9 @@ Panel {
 
             Text {
               text: (root.state.activePreset === "headphones" ? "Headphones" : "Speakers")
-                + " intensity " + Math.round(intensitySlider.value) + "%"
+                + " tonal correction strength " + Math.round(intensitySlider.value) + "%"
+              width: parent.width
+              wrapMode: Text.WordWrap
               color: Color.menu.text
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
