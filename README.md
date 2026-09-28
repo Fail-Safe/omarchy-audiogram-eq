@@ -1,5 +1,8 @@
 # Audiogram EQ
 
+[![Built for Omarchy: Plugin](https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg)](https://github.com/tcballard/omarchy-badges)
+[![Supported Omarchy versions: 4.x](https://raw.githubusercontent.com/tcballard/omarchy-badges/8b0189738018961c1bd275d903dd37ceed6bf6ae/badges/v1/compatibility/omarchy-4.x.svg)](#compatibility)
+
 Listener-compensating equalizer for Omarchy. Enter clinical audiogram
 thresholds and get **headphones** / **speakers** presets shaped for *your*
 hearing — not a measurement of whether the laptop sounds “flat.”
@@ -168,6 +171,18 @@ left alone so a reinstall can pick them up again.
 Backend config and profile paths shown above use the default `~/.config` root.
 If `XDG_CONFIG_HOME` is set, the backend uses that root instead. Omarchy's plugin
 installation path remains `~/.config/omarchy/plugins/`.
+
+## Compatibility
+
+- Supported Omarchy versions: **4.x** (stable 4.0.0 up to, but excluding, 5.0.0).
+- Last tested: Omarchy **4.0.3** (`try-omarchy-runtime`) on aarch64 Linux.
+- Checks performed: `omarchy plugin validate .`, unit tests, panel enable/disable,
+  headphones vs speakers auto-detect, WirePlumber fragment apply/reset, and
+  tonal-correction strength while listening.
+- Known limitations: needs the host PipeWire / WirePlumber stack; first migrate
+  from the pre-1.0.3 low-shelf preamp restarts user WirePlumber once (brief audio
+  interrupt). Compatibility badges are maintainer-declared support, not certification.
+
 ## Important safety note
 
 **Not a medical device.** Assistive desktop EQ from published thresholds —
